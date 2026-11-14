@@ -39,6 +39,13 @@ temporary `SECRET_KEY`. Copy `.env.example` to `.env` to set your own values.
 
 Requires Node.js 18.17 or newer.
 
+Or install it as a package and run it inside your own project:
+
+```bash
+npm install crossupload-core
+npx crossupload-core
+```
+
 ## Add it to your site
 
 ### 1. Your backend: a session endpoint
