@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrossUpload core demo</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <h1>Upload from your phone into this form</h1>
+    <p class="muted">This is an ordinary form with the CrossUpload widget attached. Click <strong>Upload a file</strong>, then pick a file on this computer or scan the QR code with your phone. Your phone must be able to reach this server (same Wi-Fi, or set <code>PUBLIC_URL</code>).</p>
+
+    <form id="form">
+      <label class="field">Your name <input name="name" required autocomplete="name"></label>
+      <div class="row">
+        <button type="button" class="btn ghost" id="upload">Upload a file</button>
+        <span class="muted" id="count">No files yet</span>
+      </div>
+      <input type="hidden" id="attachments" name="attachment_ids" value="[]">
+      <div class="row"><button class="btn" type="submit">Submit</button></div>
+    </form>
+    <div id="result" class="result" hidden></div>
+
+    <h2>What happens here</h2>
+    <ol class="muted">
+      <li>The widget asks <code>POST /demo/session</code> for an upload session. In your app this is your backend calling <code>POST /v1/sessions</code> with <code>SECRET_KEY</code>.</li>
+      <li>Files go straight to this server, the real type is read from the bytes, and accepted file IDs land in the hidden <code>attachment_ids</code> field.</li>
+      <li>On submit, the form handler checks every ID again on the server (<code>GET /v1/files/:id</code>).</li>
+    </ol>
+  </main>
+  <script src="/v1/widget.js"></script>
+  <script src="/demo.js"></script>
+</body>
+</html>

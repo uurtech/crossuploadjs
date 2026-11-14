@@ -1,0 +1,20 @@
+{
+  "name": "crossupload-core",
+  "version": "0.1.0",
+  "description": "Open-source core of CrossUpload: an embeddable upload widget that lets users send files from their phone into a web form on their computer via a QR code.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/server.js",
+  "bin": { "crossupload-core": "src/server.js" },
+  "files": ["src", "public", "README.md", "LICENSE"],
+  "engines": { "node": ">=18.17" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": ["upload", "file-upload", "qr-code", "widget", "phone", "form", "self-hosted"],
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}
