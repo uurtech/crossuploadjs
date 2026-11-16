@@ -107,15 +107,16 @@ export function createApp(config) {
     if (!safeEqual(bearer(req), config.secretKey)) throw new HttpError(401, 'unauthorized', 'Invalid secret key');
   }
 
-  function requireClient(req, sessionId, queryToken) {
+  function requireClient(req, sessionId) {
     const s = liveSession(sessionId);
-    const t = bearer(req) || queryToken || '';
+    const t = bearer(req);
     if (!t || !safeEqual(sha256(t), s.clientTokenHash)) throw new HttpError(401, 'unauthorized', 'Invalid client token');
     return s;
   }
 
   function requirePhone(req) {
-    const entry = store.phones.get(bearer(req));
+    const t = bearer(req);
+    const entry = t ? store.phones.get(sha256(t)) : null;
     if (!entry || entry.expiresAt < Date.now()) throw new HttpError(401, 'unauthorized', 'This QR code has expired. Scan a new one.');
     return liveSession(entry.sessionId);
   }
@@ -137,9 +138,30 @@ export function createApp(config) {
     if (!entry || entry.expiresAt < Date.now()) throw new HttpError(410, 'pairing_expired', 'This QR code was already used or has expired. Scan a new one.');
     const session = liveSession(entry.sessionId);
     const phoneToken = token('ph_');
-    store.phones.set(phoneToken, { sessionId: session.id, expiresAt: session.expiresAt });
+    store.phones.set(sha256(phoneToken), { sessionId: session.id, expiresAt: session.expiresAt });
     store.save();
     return { phoneToken, ...limits(session) };
+  }
+
+  /**
+   * EventSource cannot send headers, so the widget trades its client token (in a header)
+   * for a ticket that is good for one connection within a minute. The long-lived token
+   * never appears in a URL or a proxy log.
+   */
+  function eventsTicket(session) {
+    const ticket = token('et_');
+    store.tickets.set(sha256(ticket), { sessionId: session.id, expiresAt: Date.now() + 60_000 });
+    return { ticket, expiresIn: 60 };
+  }
+
+  function redeemTicket(sessionId, ticket) {
+    const key = sha256(String(ticket || ''));
+    const entry = store.tickets.get(key);
+    store.tickets.delete(key);
+    if (!entry || entry.expiresAt < Date.now() || entry.sessionId !== sessionId) {
+      throw new HttpError(401, 'unauthorized', 'Invalid or used events ticket');
+    }
+    return liveSession(sessionId);
   }
 
   /** Streams one upload to disk, checks the real type, and settles the file. */
@@ -149,8 +171,12 @@ export function createApp(config) {
     if (Number.isFinite(declared) && declared > session.maxFileSize) {
       throw new HttpError(413, 'file_too_large', `The file is larger than ${Math.round(session.maxFileSize / 1048576)} MB`);
     }
-    const used = store.sessionFiles(session.id).filter((f) => f.status !== 'rejected').length;
+    const all = store.sessionFiles(session.id);
+    const used = all.filter((f) => f.status !== 'rejected').length;
     if (used >= session.maxFiles) throw new HttpError(409, 'max_files_reached', `This form accepts up to ${session.maxFiles} files`);
+    // Rejected files do not use up the quota, so cap the attempts or one token could upload forever.
+    const maxAttempts = config.maxAttempts || session.maxFiles * 3;
+    if (all.length >= maxAttempts) throw new HttpError(429, 'too_many_attempts', 'Too many upload attempts for this form. Reload the page to start again.');
 
     const now = Date.now();
     const file = {
@@ -183,7 +209,8 @@ export function createApp(config) {
 
     const reject = (reason) => {
       rmSync(tmp, { force: true });
-      Object.assign(file, { status: 'rejected', reason, size });
+      // A rejected record is only useful while the form is open.
+      Object.assign(file, { status: 'rejected', reason, size, deleteAt: Math.min(file.deleteAt, session.expiresAt) });
       store.save();
       store.publish(session.id, publicFile(file));
       return file;
@@ -290,8 +317,11 @@ export function createApp(config) {
     ['POST', /^\/v1\/sessions\/([\w-]+)\/pair$/, async (req, res, [id]) => {
       json(res, 201, await pair(requireClient(req, id)));
     }],
+    ['POST', /^\/v1\/sessions\/([\w-]+)\/events-ticket$/, (req, res, [id]) => {
+      json(res, 201, eventsTicket(requireClient(req, id)));
+    }],
     ['GET', /^\/v1\/sessions\/([\w-]+)\/events$/, (req, res, [id], url) => {
-      events(req, res, requireClient(req, id, url.searchParams.get('token')));
+      events(req, res, redeemTicket(id, url.searchParams.get('ticket')));
     }],
     ['PUT', /^\/v1\/sessions\/([\w-]+)\/files$/, async (req, res, [id]) => {
       const f = await receive(req, requireClient(req, id), 'device');

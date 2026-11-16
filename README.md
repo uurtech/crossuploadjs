@@ -117,7 +117,8 @@ for (const id of ids) {
 | `DELETE` | `/v1/files/:id` | secret key | Delete the file now. |
 | `GET` | `/v1/sessions/:id` | client token | Session limits and files (used by the widget). |
 | `POST` | `/v1/sessions/:id/pair` | client token | New single-use QR code (`qrSvg`, `url`, `expiresAt`). |
-| `GET` | `/v1/sessions/:id/events?token=` | client token | Server-sent events, one `file` event per change. |
+| `POST` | `/v1/sessions/:id/events-ticket` | client token | A single-use ticket for one events connection, valid 60 s. |
+| `GET` | `/v1/sessions/:id/events?ticket=` | ticket | Server-sent events, one `file` event per change. |
 | `PUT` | `/v1/sessions/:id/files` | client token | Upload from the computer. Raw body, name in `X-File-Name`. |
 | `POST` | `/v1/phone/claim` | pairing token | Exchange the QR token for a phone token (once). |
 | `PUT` | `/v1/phone/files` | phone token | Upload from the phone. |
@@ -149,7 +150,7 @@ Set in the environment or in `.env` (see `.env.example`).
 |---|---|---|
 | `PORT` | `4000` | |
 | `PUBLIC_URL` | `http://<LAN IP>:PORT` | What QR codes point to. Must be reachable from the phone. |
-| `SECRET_KEY` | random (dev only) | Required in production. |
+| `SECRET_KEY` | random (dev only) | Required in production, at least 32 characters. |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated site origins. `*` is refused in production. |
 | `ALLOWED_TYPES` | JPG, PNG, HEIC, WEBP, PDF | MIME types, `image/*` or `.pdf`. |
 | `MAX_FILE_SIZE_MB` | `10` | |
@@ -157,7 +158,8 @@ Set in the environment or in `.env` (see `.env.example`).
 | `DATA_DIR` | `./data` | Files and `db.json`. |
 | `FILE_TTL_HOURS` | `24` | |
 | `SESSION_TTL_MINUTES` | `30` | |
-| `DEMO` | `true` (`false` in production) | Serves the demo form at `/`. |
+| `MAX_ATTEMPTS` | 3 × `MAX_FILES` | Upload attempts per session, rejected files included. |
+| `DEMO` | `true` in development | Serves the demo form at `/`. Its session endpoint needs no secret, so `DEMO=true` is refused in production. |
 | `NODE_ENV` | | `production` turns on the checks above. |
 
 ## Production
@@ -169,8 +171,9 @@ Set in the environment or in `.env` (see `.env.example`).
   `X-Accel-Buffering: no` for nginx).
 * The store is a JSON file in one process. For several instances, replace `src/store.js`
   with a database and a shared event bus.
-* There is no virus scanning or rate limiting in the core. Add ClamAV and a rate limiter in
-  front if you accept files from the public.
+* Each session caps upload attempts (`MAX_ATTEMPTS`), but there is no per-IP rate limiting
+  or virus scanning in the core. Add a rate limiter and ClamAV in front if you accept files
+  from the public.
 
 ### Embedding in your own Node app
 

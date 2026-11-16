@@ -19,7 +19,8 @@ export class Store extends EventEmitter {
     this.sessions = new Map();
     this.files = new Map();
     this.pairs = new Map(); // pairToken -> { sessionId, expiresAt }
-    this.phones = new Map(); // phoneToken -> { sessionId, expiresAt }
+    this.phones = new Map(); // sha256(phoneToken) -> { sessionId, expiresAt }
+    this.tickets = new Map(); // single-use SSE tickets, memory only
     this.load();
     this.timer = null;
   }
@@ -79,6 +80,7 @@ export class Store extends EventEmitter {
   sweep(now = Date.now()) {
     for (const [k, v] of this.pairs) if (v.expiresAt < now) this.pairs.delete(k);
     for (const [k, v] of this.phones) if (v.expiresAt < now) this.phones.delete(k);
+    for (const [k, v] of this.tickets) if (v.expiresAt < now) this.tickets.delete(k);
     for (const f of this.files.values()) if (f.deleteAt < now) this.deleteFile(f.id);
     for (const s of this.sessions.values()) {
       if (s.expiresAt < now && this.sessionFiles(s.id).length === 0) this.sessions.delete(s.id);

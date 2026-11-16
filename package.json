@@ -1,6 +1,6 @@
 {
   "name": "crossupload-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open-source core of CrossUpload: an embeddable upload widget that lets users send files from their phone into a web form on their computer via a QR code.",
   "license": "MIT",
   "type": "module",

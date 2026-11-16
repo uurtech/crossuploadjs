@@ -77,8 +77,11 @@ test('phone pairing is single use and delivers to the desktop over SSE', async (
   assert.ok(claimed.phoneToken);
   assert.equal((await claim(pairToken)).status, 410, 'a used QR code cannot be claimed again');
 
+  // The long-lived client token is not accepted in the URL any more.
+  assert.equal((await fetch(`${base}/v1/sessions/${s.sessionId}/events?token=${s.clientToken}`)).status, 401);
+  const { ticket } = await (await fetch(`${base}/v1/sessions/${s.sessionId}/events-ticket`, { method: 'POST', headers: auth })).json();
   const ctrl = new AbortController();
-  const events = await fetch(`${base}/v1/sessions/${s.sessionId}/events?token=${s.clientToken}`, { signal: ctrl.signal });
+  const events = await fetch(`${base}/v1/sessions/${s.sessionId}/events?ticket=${ticket}`, { signal: ctrl.signal });
   const reader = events.body.getReader();
 
   const up = await fetch(`${base}/v1/phone/files`, {
@@ -90,6 +93,31 @@ test('phone pairing is single use and delivers to the desktop over SSE', async (
   while (!text.includes('"status":"accepted"')) text += new TextDecoder().decode((await reader.read()).value);
   assert.match(text, /"source":"phone"/);
   ctrl.abort();
+
+  assert.equal((await fetch(`${base}/v1/sessions/${s.sessionId}/events?ticket=${ticket}`)).status, 401, 'a ticket works once');
+  // Phone tokens are stored hashed, never as the bearer value itself.
+  assert.ok(!app.store.phones.has(claimed.phoneToken));
+});
+
+test('rejected uploads cannot repeat forever', async () => {
+  const s = await (await createSession()).json();
+  const put = () => fetch(`${base}/v1/sessions/${s.sessionId}/files`, {
+    method: 'PUT', body: Buffer.from('MZ fake exe'), headers: { Authorization: `Bearer ${s.clientToken}`, 'X-File-Name': 'x.exe' },
+  });
+  const codes = [];
+  for (let i = 0; i < 8; i++) codes.push((await put()).status);
+  // MAX_FILES is 2 in this suite, so 6 attempts, then 429.
+  assert.deepEqual(codes, [422, 422, 422, 422, 422, 422, 429, 429]);
+});
+
+test('production refuses the demo, a weak secret and * origins', () => {
+  const base = { NODE_ENV: 'production', ALLOWED_ORIGINS: 'https://shop.example', DATA_DIR: dir };
+  const strong = 'x'.repeat(32);
+  assert.throws(() => loadConfig({ ...base, SECRET_KEY: 'short' }), /32/);
+  assert.throws(() => loadConfig({ ...base, SECRET_KEY: strong, DEMO: 'true' }), /DEMO/);
+  assert.throws(() => loadConfig({ ...base, SECRET_KEY: strong, ALLOWED_ORIGINS: '*' }), /ALLOWED_ORIGINS/);
+  const ok = loadConfig({ ...base, SECRET_KEY: strong });
+  assert.equal(ok.demo, false);
 });
 
 test('serves the widget and the phone page', async () => {

@@ -37,8 +37,10 @@ export function loadConfig(overrides = {}) {
 
   let secretKey = env.SECRET_KEY || '';
   let generatedSecret = false;
+  if (production && secretKey.length < 32) {
+    throw new Error('SECRET_KEY must be at least 32 random characters when NODE_ENV=production (try: openssl rand -base64 32)');
+  }
   if (!secretKey) {
-    if (production) throw new Error('SECRET_KEY is required when NODE_ENV=production');
     secretKey = 'sk_dev_' + randomBytes(18).toString('base64url');
     generatedSecret = true;
   }
@@ -47,6 +49,10 @@ export function loadConfig(overrides = {}) {
   if (production && allowedOrigins.includes('*')) {
     throw new Error('ALLOWED_ORIGINS must list your site origins when NODE_ENV=production');
   }
+
+  // The demo mints upload sessions without the secret key, so it never runs in production.
+  const demo = String(env.DEMO ?? (production ? 'false' : 'true')) === 'true';
+  if (production && demo) throw new Error('DEMO=true is not allowed when NODE_ENV=production: the demo creates sessions without SECRET_KEY');
 
   return {
     production,
@@ -63,6 +69,7 @@ export function loadConfig(overrides = {}) {
     fileTtlMs: int(env.FILE_TTL_HOURS, 24) * 3600_000,
     sessionTtlMs: int(env.SESSION_TTL_MINUTES, 30) * 60_000,
     pairTtlMs: 5 * 60_000,
-    demo: String(env.DEMO ?? (production ? 'false' : 'true')) !== 'false',
+    demo,
+    maxAttempts: int(env.MAX_ATTEMPTS, 0), // 0: three times MAX_FILES per session
   };
 }

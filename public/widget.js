@@ -106,7 +106,7 @@
     var input = opts.resultInput ? resolve(opts.resultInput) : null;
     if (!button) throw new Error('CrossUpload: target not found');
 
-    var session = null, source = null, files = [], removed = {}, host = null, ui = null, pairTimer = null;
+    var session = null, source = null, files = [], removed = {}, host = null, ui = null, pairTimer = null, retry = null, destroyed = false;
 
     function emitError(code, message) {
       if (opts.onError) opts.onError({ code: code, message: message });
@@ -137,10 +137,21 @@
         .then(function (r) { if (!r.ok) throw new Error('session endpoint returned ' + r.status); return r.json(); })
         .then(function (s) {
           session = s;
-          source = new EventSource(server + '/v1/sessions/' + s.sessionId + '/events?token=' + encodeURIComponent(s.clientToken));
-          source.addEventListener('file', function (e) { upsert(JSON.parse(e.data)); });
+          listen();
           return s;
         });
+    }
+
+    // Live file events. Each connection uses a fresh single-use ticket, so the client token
+    // stays in headers. On a drop, get a new ticket and reconnect (the server replays the files).
+    function listen() {
+      if (destroyed) return;
+      api('/events-ticket', { method: 'POST' }).then(function (res) {
+        if (!res.ok || destroyed) throw new Error();
+        source = new EventSource(server + '/v1/sessions/' + session.sessionId + '/events?ticket=' + encodeURIComponent(res.body.ticket));
+        source.addEventListener('file', function (e) { upsert(JSON.parse(e.data)); });
+        source.onerror = function () { source.close(); source = null; retry = setTimeout(listen, 3000); };
+      }).catch(function () { retry = setTimeout(listen, 5000); });
     }
 
     function api(path, init) {
@@ -278,11 +289,13 @@
       files: accepted,
       destroy: function () {
         close();
+        destroyed = true;
+        clearTimeout(retry);
         button.removeEventListener('click', onClick);
         if (source) source.close();
       },
     };
   }
 
-  global.CrossUpload = { attach: attach, version: '0.1.0' };
+  global.CrossUpload = { attach: attach, version: '0.1.1' };
 })(window);
